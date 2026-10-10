@@ -98,6 +98,14 @@
         font-size: 34px;
         font-weight: 700;
       }
+      .item .nome {
+        flex: 1;
+      }
+      .rm {
+        background: #da3633;
+        font-size: 18px;
+        padding: 8px 14px;
+      }
       .vazio {
         color: var(--mut);
         padding: 30px 0;
@@ -143,7 +151,6 @@
       <h1>Fila de Controles</h1>
       <span id="status">Desconectado</span>
       <button class="p" id="btnCon">Conectar ESP32</button>
-      <button id="btnReset">Resetar rodada (Espaço)</button>
     </header>
 
     <main>
@@ -236,7 +243,8 @@
             const [cor, hex] = CORES[idx];
             return `<div class="item" style="border-color:${hex}">
       <div class="pos">${n + 1}º</div>
-      <div class="nome">${cfg[idx].nome || cor}</div></div>`;
+      <div class="nome">${cfg[idx].nome || cor}</div>
+      <button class="rm" onclick="remover(${idx})" title="Tirar da fila">✕</button></div>`;
           })
           .join("");
       }
@@ -268,18 +276,10 @@
         entrou(idx);
       }
 
-      function resetar() {
-        fila = [];
+      function remover(idx) {
+        fila = fila.filter((i) => i !== idx);
         renderFila();
       }
-
-      $("btnReset").onclick = resetar;
-      document.addEventListener("keydown", (e) => {
-        if (e.code === "Space" && e.target.tagName !== "INPUT") {
-          e.preventDefault();
-          resetar();
-        }
-      });
 
       $("btnCon").onclick = async () => {
         if (!("serial" in navigator)) {
