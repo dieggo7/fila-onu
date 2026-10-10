@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fila de Controles</title>
+    <style>
+      :root {
+        --bg: #111418;
+        --card: #1c2128;
+        --txt: #f1f3f5;
+        --mut: #8b949e;
+        --ac: #2f81f7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--txt);
+      }
+      header {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 12px 16px;
+        background: var(--card);
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 18px;
+        margin: 0 auto 0 0;
+      }
+      button {
+        background: #30363d;
+        color: var(--txt);
+        border: 0;
+        padding: 8px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button:hover {
+        filter: brightness(1.2);
+      }
+      button.p {
+        background: var(--ac);
+      }
+      button.l {
+        background: #d29922;
+        color: #000;
+      }
+      #status {
+        font-size: 13px;
+        color: var(--mut);
+      }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 420px;
+        gap: 16px;
+        padding: 16px;
+      }
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+      .col {
+        background: var(--card);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 15px;
+        color: var(--mut);
+        font-weight: 600;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px;
+        margin-bottom: 10px;
+        border-radius: 10px;
+        background: #0d1117;
+        border-left: 14px solid;
+      }
+      .pos {
+        font-size: 36px;
+        font-weight: 800;
+        width: 52px;
+        text-align: center;
+      }
+      .nome {
+        font-size: 34px;
+        font-weight: 700;
+      }
+      .vazio {
+        color: var(--mut);
+        padding: 30px 0;
+        text-align: center;
+      }
+      .slot {
+        display: grid;
+        grid-template-columns: 22px 1fr 60px auto auto;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+      .sw {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 1px solid #fff4;
+      }
+      input {
+        background: #0d1117;
+        border: 1px solid #30363d;
+        color: var(--txt);
+        padding: 6px 8px;
+        border-radius: 6px;
+        width: 100%;
+      }
+      .cod {
+        color: var(--mut);
+        font-size: 11px;
+        text-align: right;
+      }
+      #log {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--mut);
+        min-height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Fila de Controles</h1>
+      <span id="status">Desconectado</span>
+      <button class="p" id="btnCon">Conectar ESP32</button>
+      <button id="btnReset">Resetar rodada (Espaço)</button>
+    </header>
+
+    <main>
+      <div class="col">
+        <h2>FILA</h2>
+        <div id="fila"></div>
+      </div>
+      <div class="col">
+        <h2>CONTROLES (edite o nome de cada cor)</h2>
+        <div id="slots"></div>
+        <div id="log"></div>
+      </div>
+    </main>
+
+    <script>
+      const CORES = [
+        ["Vermelho", "#e53935"],
+        ["Azul", "#1e63e9"],
+        ["Amarelo", "#fdd835"],
+        ["Verde", "#43a047"],
+        ["Laranja", "#fb8c00"],
+        ["Roxo", "#8e24aa"],
+        ["Rosa", "#ec407a"],
+        ["Marrom", "#6d4c41"],
+        ["Cinza", "#9e9e9e"],
+        ["Preto", "#3a3f45"],
+        ["Branco", "#fafafa"],
+        ["Ciano", "#00acc1"],
+        ["Lima", "#c0ca33"],
+        ["Vinho", "#880e4f"],
+        ["Marinho", "#1a237e"],
+      ];
+
+      let cfg =
+        JSON.parse(localStorage.getItem("cfgControles") || "null") ||
+        CORES.map(() => ({ code: null }));
+      // garante que cada cor tem um nome editável (padrão = nome da cor)
+      cfg = CORES.map(([n], i) => ({
+        code: cfg[i]?.code ?? null,
+        nome: cfg[i]?.nome ?? (cfg[i]?.pais || n),
+      }));
+      let fila = [];
+      let aprendendo = null;
+
+      const $ = (id) => document.getElementById(id);
+      const salvar = () =>
+        localStorage.setItem("cfgControles", JSON.stringify(cfg));
+      const log = (t) => ($("log").textContent = t);
+
+      function renderSlots() {
+        $("slots").innerHTML = "";
+        CORES.forEach(([nome, hex], i) => {
+          const d = document.createElement("div");
+          d.className = "slot";
+          d.innerHTML = `
+      <div class="sw" style="background:${hex}"></div>
+      <input list="paises" placeholder="${nome}" value="${cfg[i].nome.replace(/"/g, "&quot;")}">
+      <div class="cod">${cfg[i].code ?? "sem código"}</div>
+      <button class="l">${aprendendo === i ? "Aperte..." : "Aprender"}</button>
+      <button>Testar</button>`;
+          const [inp, , bA, bT] = [
+            d.children[1],
+            d.children[2],
+            d.children[3],
+            d.children[4],
+          ];
+          inp.oninput = () => {
+            cfg[i].nome = inp.value;
+            salvar();
+            renderFila();
+          };
+          bA.onclick = () => {
+            aprendendo = aprendendo === i ? null : i;
+            log(aprendendo === i ? `Aperte o botão do controle ${nome}` : "");
+            renderSlots();
+          };
+          bT.onclick = () => entrou(i);
+          $("slots").appendChild(d);
+        });
+      }
+
+      function renderFila() {
+        const el = $("fila");
+        if (!fila.length) {
+          el.innerHTML = '<div class="vazio">Aguardando...</div>';
+          return;
+        }
+        el.innerHTML = fila
+          .map((idx, n) => {
+            const [cor, hex] = CORES[idx];
+            return `<div class="item" style="border-color:${hex}">
+      <div class="pos">${n + 1}º</div>
+      <div class="nome">${cfg[idx].nome || cor}</div></div>`;
+          })
+          .join("");
+      }
+
+      function entrou(idx) {
+        if (!fila.includes(idx)) {
+          fila.push(idx);
+          renderFila();
+        }
+      }
+
+      function receberCodigo(code) {
+        if (aprendendo !== null) {
+          cfg.forEach((c) => {
+            if (c.code === code) c.code = null;
+          });
+          cfg[aprendendo].code = code;
+          log(`Código ${code} salvo para ${CORES[aprendendo][0]}`);
+          aprendendo = null;
+          salvar();
+          renderSlots();
+          return;
+        }
+        const idx = cfg.findIndex((c) => c.code === code);
+        if (idx < 0) {
+          log(`Código desconhecido: ${code}`);
+          return;
+        }
+        entrou(idx);
+      }
+
+      function resetar() {
+        fila = [];
+        renderFila();
+      }
+
+      $("btnReset").onclick = resetar;
+      document.addEventListener("keydown", (e) => {
+        if (e.code === "Space" && e.target.tagName !== "INPUT") {
+          e.preventDefault();
+          resetar();
+        }
+      });
+
+      $("btnCon").onclick = async () => {
+        if (!("serial" in navigator)) {
+          alert(
+            "Use Chrome ou Edge (Web Serial não funciona no Firefox/Safari).",
+          );
+          return;
+        }
+        try {
+          const porta = await navigator.serial.requestPort();
+          await porta.open({ baudRate: 115200 });
+          $("status").textContent = "Conectado";
+          $("btnCon").style.display = "none";
+          const dec = new TextDecoderStream();
+          porta.readable.pipeTo(dec.writable);
+          const reader = dec.readable.getReader();
+          let buf = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += value;
+            const linhas = buf.split("\n");
+            buf = linhas.pop();
+            for (const l of linhas) {
+              const p = l.trim().split(",");
+              if (p[0] === "CODE") receberCodigo(Number(p[1]));
+            }
+          }
+        } catch (e) {
+          $("status").textContent = "Desconectado";
+          $("btnCon").style.display = "";
+          log("Erro: " + e.message);
+        }
+      };
+
+      renderSlots();
+      renderFila();
+    </script>
+  </body>
+</html>
