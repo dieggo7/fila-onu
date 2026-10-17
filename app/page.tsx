@@ -13,9 +13,10 @@ type Screen = "queue" | "controls";
 type Toast = { id: number; message: string; tone: "info" | "error"; undo?: () => void };
 
 function formatTime(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const absoluteSeconds = Math.abs(totalSeconds);
+  const minutes = Math.floor(absoluteSeconds / 60);
+  const seconds = absoluteSeconds % 60;
+  return `${totalSeconds < 0 ? "−" : ""}${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function parseTime(value: string) {
@@ -31,11 +32,15 @@ export default function Home() {
   const timer = useTimer();
   const [screen, setScreen] = useState<Screen>("queue");
   const [learning, setLearning] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [fullScreen, setFullScreen] = useState(false);
   const [manualId, setManualId] = useState(COLORS[0].id);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [editingTopic, setEditingTopic] = useState(false);
+  const [topicDraft, setTopicDraft] = useState("");
+  const [sequence, setSequence] = useState<string[]>([]);
+  const sequenceRef = useRef<string[]>([]);
+  const topicInput = useRef<HTMLInputElement>(null);
   const durationInput = useRef<HTMLInputElement>(null);
   const appRef = useRef<HTMLElement>(null);
   const learnRef = useRef<string | null>(null);
@@ -62,8 +67,13 @@ export default function Home() {
       notify(message);
       learnRef.current = null;
       setLearning(null);
-      setConfirmed(target);
-      window.setTimeout(() => setConfirmed((current) => current === target ? null : current), 1800);
+      const nextSequence = sequenceRef.current.slice(1);
+      sequenceRef.current = nextSequence;
+      setSequence(nextSequence);
+      if (nextSequence.length) {
+        learnRef.current = nextSequence[0];
+        setLearning(nextSequence[0]);
+      }
       return;
     }
     const match = Object.entries(controlsRef.current).find(([, config]) => config.code === code);
@@ -86,10 +96,11 @@ export default function Home() {
   }, []);
 
   function startLearning(id: string) {
+    sequenceRef.current = [];
+    setSequence([]);
     const next = learnRef.current === id ? null : id;
     learnRef.current = next;
     setLearning(next);
-    setConfirmed(null);
   }
 
   function dismissToast() {
@@ -128,20 +139,36 @@ export default function Home() {
     const seconds = parseTime(durationInput.current?.value ?? "");
     if (seconds === null || seconds < 1) {
       if (durationInput.current) durationInput.current.value = formatTime(timer.defaultDuration);
-      notify("Use o formato minutos:segundos, por exemplo 1:30.", "error");
+      notify("Use o formato minutos:segundos, por exemplo 2:00.", "error");
       return;
     }
     timer.setDuration(seconds);
   }
 
-  function createTopic() {
-    const title = window.prompt("Nome do novo tópico:")?.trim();
-    if (title) topics.create(title);
+  function beginTopicEdit(title = topics.activeTopic.title) {
+    setTopicDraft(title);
+    setEditingTopic(true);
+    requestAnimationFrame(() => { topicInput.current?.focus(); topicInput.current?.select(); });
   }
 
-  function renameTopic() {
-    const title = window.prompt("Renomear tópico:", topics.activeTopic.title)?.trim();
+  function finishTopicEdit() {
+    const title = topicDraft.trim();
     if (title) topics.rename(topics.activeTopicId, title);
+    setEditingTopic(false);
+  }
+
+  function createTopic() {
+    topics.create("Novo tópico");
+    beginTopicEdit("Novo tópico");
+  }
+
+  function startSequence() {
+    const unbound = COLORS.filter((color) => controls[color.id]?.code === null).map((color) => color.id);
+    if (!unbound.length) { notify("Todos os controles já estão vinculados."); return; }
+    sequenceRef.current = unbound;
+    setSequence(unbound);
+    learnRef.current = unbound[0];
+    setLearning(unbound[0]);
   }
 
   function deleteTopic() {
@@ -168,12 +195,12 @@ export default function Home() {
       {toast && <div key={toast.id} className={`toast toast-${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"} aria-live="polite"><span>{toast.message}</span>{toast.undo && <button className="undo-button" onClick={() => { toast.undo?.(); dismissToast(); }}>Desfazer</button>}<button aria-label="Dispensar mensagem" onClick={dismissToast}>×</button></div>}
 
       {screen === "queue" ? <section className="debate-view" aria-label="Debate">
-<div className="topic-bar"><div className="topic-picker"><label className="visually-hidden" htmlFor="active-topic">Tópico ativo</label><select id="active-topic" value={topics.activeTopicId} onChange={(event) => { timer.pause(); topics.selectTopic(event.target.value); }}>{topics.topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select><details className="topic-menu"><summary className="icon-button" aria-label="Ações do tópico">⋯</summary><div className="topic-menu-content"><button className="text-button" onClick={createTopic}>Novo tópico</button><button className="text-button" onClick={renameTopic}>Renomear</button><button className="text-button danger-text" onClick={deleteTopic} disabled={topics.topics.length <= 1}>Excluir</button></div></details></div></div>
+<div className="topic-bar"><div className="topic-picker"><label className="visually-hidden" htmlFor="active-topic">Tópico ativo</label><select id="active-topic" value={topics.activeTopicId} onChange={(event) => { timer.pause(); topics.selectTopic(event.target.value); setEditingTopic(false); }}>{topics.topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select><div className="topic-title-editor">{editingTopic ? <input ref={topicInput} value={topicDraft} aria-label="Nome do tópico" onChange={(event) => setTopicDraft(event.target.value)} onBlur={finishTopicEdit} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { setTopicDraft(topics.activeTopic.title); setEditingTopic(false); } }} /> : <><button className="topic-title-action" onClick={() => beginTopicEdit()}>{topics.activeTopic.title}</button><button className="icon-button" aria-label="Renomear tópico" title="Renomear tópico" onClick={() => beginTopicEdit()}>✎</button></>}</div><button className="button button-secondary new-topic" onClick={createTopic}><span aria-hidden="true">+</span> Novo tópico</button><details className="topic-menu"><summary className="icon-button" aria-label="Ações do tópico">⋯</summary><div className="topic-menu-content"><button className="text-button danger-text" onClick={deleteTopic} disabled={topics.topics.length <= 1}>Excluir</button></div></details></div></div>
 
-        <section className={`speaker-panel ${timer.remaining <= 10 && speakers.topic.currentSpeaker ? "timer-warning" : ""} ${timer.remaining === 0 && speakers.topic.currentSpeaker ? "timer-expired" : ""}`} aria-labelledby="speaker-heading" aria-live="polite">
+        <section className={`speaker-panel ${timer.remaining <= 10 && speakers.topic.currentSpeaker ? "timer-warning" : ""} ${timer.remaining <= 0 && speakers.topic.currentSpeaker ? "timer-expired" : ""}`} aria-labelledby="speaker-heading" aria-live="polite">
           <div className="speaker-ident"><h1 id="speaker-heading">Falando agora</h1>{currentColor && <div className="current-speaker"><span className="speaker-swatch" style={{ background: currentColor.hex }} />{nameFor(currentColor.id)}</div>}{!currentColor && <p className="no-speaker">Nenhuma delegação chamada</p>}</div>
           <div className="timer-readout" aria-label={speakers.topic.currentSpeaker ? `Tempo restante ${formatTime(timer.remaining)}` : "Sem orador no momento"}>{speakers.topic.currentSpeaker ? formatTime(timer.remaining) : "--:--"}</div>
-          <div className="timer-controls"><button className="button button-primary" onClick={timer.running ? timer.pause : timer.start} disabled={!speakers.topic.currentSpeaker || timer.remaining === 0}>{timer.running ? "Pausar" : "Iniciar"}</button></div>
+          <div className="timer-controls"><button className="button button-primary" onClick={timer.running ? timer.pause : timer.start} disabled={!speakers.topic.currentSpeaker}>{timer.running ? "Pausar" : "Iniciar"}</button></div>
           <button className="button finish-button" onClick={finishSpeech} disabled={!speakers.topic.currentSpeaker}>Finalizar fala</button>
         </section>
 
@@ -194,16 +221,15 @@ export default function Home() {
 
         <div className="projector-view" aria-live="polite"><p className="projector-topic">{topics.activeTopic.title}</p><h1>Falando agora</h1>{currentColor ? <><div className="projector-speaker"><span className="speaker-swatch" style={{ background: currentColor.hex }} />{nameFor(currentColor.id)}</div><div className="projector-time">{formatTime(timer.remaining)}</div></> : <p className="projector-empty">Aguardando próxima delegação</p>}<h2>Próximos</h2><ol>{speakers.topic.waiting.slice(0, 5).map((id, index) => { const color = COLORS.find((item) => item.id === id); return <li key={`${id}-${index}`}><span>{index + 1}.</span><i style={{ background: color?.hex }} />{nameFor(id)}</li>; })}</ol></div>
       </section> : <section className="controls-view" aria-labelledby="controls-title">
-        <div className="controls-heading"><h1 id="controls-title">Controles</h1><p><strong>{linkedCount} de 15</strong> delegações vinculadas</p></div>
+        <div className="controls-heading"><div><h1 id="controls-title">Controles</h1><p><strong>{linkedCount} de 15</strong> delegações vinculadas</p></div><button className="button button-primary" onClick={startSequence} disabled={sequence.length > 0}>Vincular em sequência</button></div>
         <datalist id="country-suggestions">{COUNTRY_SUGGESTIONS.map((country) => <option key={country} value={country} />)}</datalist>
         <div className="control-grid">{COLORS.map((color) => {
           const config = controls[color.id];
           const isLearning = learning === color.id;
-          const isConfirmed = confirmed === color.id;
           return <article className={`control-card ${config?.code === null ? "needs-link" : "is-linked"} ${isLearning ? "is-learning" : ""}`} key={color.id} style={{ "--control-color": color.hex } as React.CSSProperties}>
             <div className="card-name"><span className="color-swatch" aria-hidden="true" /><label className="visually-hidden" htmlFor={`name-${color.id}`}>Nome da delegação</label><input className="name-input" id={`name-${color.id}`} list="country-suggestions" placeholder={color.name} value={config?.nome ?? color.name} onChange={(event) => rename(color.id, event.target.value)} /></div>
-            <div className="binding-status">{config?.code === null ? <><span className="unbound-dot" />Sem código</> : <><span className="check-mark" aria-hidden="true">✓</span>{isConfirmed ? "Vinculado!" : "Vinculado"}<span className="code-number">{config?.code}</span></>}</div>
-            {isLearning ? <div className="learn-prompt"><p>Aperte o botão do controle {color.name} agora.</p><button className="button button-secondary cancel-button" onClick={() => startLearning(color.id)}>Cancelar</button></div> : <div className="card-actions"><button className={`button ${config?.code === null ? "button-primary" : "button-secondary"}`} onClick={() => startLearning(color.id)}>{config?.code === null ? "Vincular" : "Refazer"}</button><button className="test-link" onClick={() => speakers.enroll(color.id)}>Testar</button></div>}
+            <div className="binding-status">{config?.code !== null && <><span className="check-mark" aria-hidden="true">✓</span><span className="code-number">{config?.code}</span></>}</div>
+            {isLearning ? <div className="learn-prompt"><p>Aperte o controle {color.name}</p>{sequence.length > 0 && <button className="button button-secondary cancel-button" onClick={() => { const next = sequenceRef.current.slice(1); sequenceRef.current = next; setSequence(next); learnRef.current = next[0] ?? null; setLearning(next[0] ?? null); }}>Pular</button>}<button className="button button-secondary cancel-button" onClick={() => { sequenceRef.current = []; setSequence([]); learnRef.current = null; setLearning(null); }}>Cancelar</button></div> : <div className="card-actions"><button className="button button-secondary" onClick={() => startLearning(color.id)}>{config?.code === null ? "Vincular" : "Refazer"}</button><button className="test-button" aria-label={`Testar ${config?.nome || color.name}`} title={`Testar ${config?.nome || color.name}`} onClick={() => speakers.enroll(color.id)}>▶</button></div>}
           </article>;
         })}</div>
       </section>}

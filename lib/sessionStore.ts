@@ -24,12 +24,12 @@ function defaultControls() {
 }
 
 export function createTopic(title = "Tópico 1"): DebateTopic {
-  return { id: crypto.randomUUID(), title, waiting: [], currentSpeaker: null, history: [], remainingSeconds: 90 };
+  return { id: crypto.randomUUID(), title, waiting: [], currentSpeaker: null, history: [], remainingSeconds: 120 };
 }
 
 export function defaultSession(): DebateSession {
-  const topic: DebateTopic = { id: "topic-1", title: "Tópico 1", waiting: [], currentSpeaker: null, history: [], remainingSeconds: 90 };
-  return { controls: defaultControls(), topics: [topic], activeTopicId: topic.id, defaultDuration: 90 };
+  const topic: DebateTopic = { id: "topic-1", title: "Tópico 1", waiting: [], currentSpeaker: null, history: [], remainingSeconds: 120 };
+  return { controls: defaultControls(), topics: [topic], activeTopicId: topic.id, defaultDuration: 120 };
 }
 
 export function parseSession(raw: string): DebateSession {
@@ -69,7 +69,7 @@ export function parseSession(raw: string): DebateSession {
             ? [{ id: speech.id, durationSeconds: speech.durationSeconds, finishedAt: speech.finishedAt }]
             : [];
         }) : [],
-        remainingSeconds: typeof topic.remainingSeconds === "number" && Number.isFinite(topic.remainingSeconds) ? Math.max(0, topic.remainingSeconds) : 90,
+        remainingSeconds: typeof topic.remainingSeconds === "number" && Number.isFinite(topic.remainingSeconds) ? topic.remainingSeconds === 90 && saved.defaultDuration === 90 ? 120 : topic.remainingSeconds : 120,
       }];
     });
     const safeTopics = topics.length ? topics : defaults.topics;
@@ -79,7 +79,7 @@ export function parseSession(raw: string): DebateSession {
       controls,
       topics: safeTopics,
       activeTopicId,
-      defaultDuration: typeof saved.defaultDuration === "number" && Number.isFinite(saved.defaultDuration) ? Math.min(3600, Math.max(1, saved.defaultDuration)) : 90,
+      defaultDuration: typeof saved.defaultDuration === "number" && Number.isFinite(saved.defaultDuration) ? Math.min(3600, Math.max(1, saved.defaultDuration === 90 ? 120 : saved.defaultDuration)) : 120,
     };
   } catch {
     return defaults;

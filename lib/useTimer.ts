@@ -6,17 +6,17 @@ import { useSpeakers } from "./useSpeakers";
 
 export function useTimer() {
   const { activeTopicId, defaultDuration, setDefaultDuration } = useTopics();
-  const { topic, setRemaining } = useSpeakers();
+  const { topic, setRemaining, tick } = useSpeakers();
   const [runningTopicId, setRunningTopicId] = useState<string | null>(null);
-  const running = runningTopicId === activeTopicId && topic.remainingSeconds > 0;
+  const running = runningTopicId === activeTopicId && Boolean(topic.currentSpeaker);
   const remaining = topic.remainingSeconds;
   useEffect(() => {
-    if (!running || !topic.currentSpeaker || remaining <= 0) return;
-    const interval = window.setInterval(() => setRemaining(remaining - 1), 1000);
+    if (!running || !topic.currentSpeaker) return;
+    const interval = window.setInterval(tick, 1000);
     return () => window.clearInterval(interval);
-  }, [activeTopicId, remaining, running, setRemaining, topic.currentSpeaker]);
+  }, [activeTopicId, remaining, running, tick, topic.currentSpeaker]);
 
-  const start = useCallback(() => { if (topic.currentSpeaker && remaining > 0) setRunningTopicId(activeTopicId); }, [activeTopicId, remaining, topic.currentSpeaker]);
+  const start = useCallback(() => { if (topic.currentSpeaker) setRunningTopicId(activeTopicId); }, [activeTopicId, topic.currentSpeaker]);
   const pause = useCallback(() => setRunningTopicId(null), []);
   const restart = useCallback(() => {
     setRunningTopicId(null);

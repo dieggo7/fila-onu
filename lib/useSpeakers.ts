@@ -63,5 +63,6 @@ export function useSpeakers() {
   }), [activeTopicId, editTopic]);
 
   const setRemaining = useCallback((seconds: number) => editTopic(activeTopicId, (topic) => ({ ...topic, remainingSeconds: Math.max(0, seconds) })), [activeTopicId, editTopic]);
-  return { topic: activeTopic, enroll, call, finish, remove, move, setRemaining };
+  const tick = useCallback(() => editTopic(activeTopicId, (topic) => ({ ...topic, remainingSeconds: topic.remainingSeconds - 1 })), [activeTopicId, editTopic]);
+  return { topic: activeTopic, enroll, call, finish, remove, move, setRemaining, tick };
 }
