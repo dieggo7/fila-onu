@@ -1,36 +1,155 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fila de Controles
 
-## Getting Started
+Sistema de "buzzer" para quiz: vários participantes apertam o botão de um **controle de portão** e a **ordem de chegada** aparece como uma fila ao vivo na tela. Cada controle tem uma cor, e o nome de cada cor pode ser editado (por exemplo, Azul = EUA).
 
-First, run the development server:
+Um ESP32 com receptor 433 MHz capta os sinais dos controles e os envia ao computador pelo cabo USB. A página web (Next.js) lê a porta serial direto do navegador, usando a **Web Serial API**, sem precisar de backend.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Como funciona
+
+```
+Controle (433 MHz) ──rádio──> Receptor RXB6 ──> ESP32 ──USB/Serial──> Navegador (Next.js)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. O controle envia um código numérico fixo ao apertar o botão.
+2. O ESP32 recebe o código e imprime na serial uma linha no formato `CODE,<valor>,<bits>`.
+3. A página lê essa linha, descobre a qual cor o código pertence e coloca a cor no final da fila.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Funcionalidades
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Conexão com o ESP32 via Web Serial (Chrome/Edge).
+- 15 controles, cada um com uma cor fixa.
+- **Nome editável** para cada cor (texto livre, com sugestões de países).
+- Botão **Aprender**: vincula o próximo controle apertado à cor escolhida.
+- Botão **Testar**: simula o aperto de uma cor, sem precisar de hardware.
+- Fila por ordem de chegada, com cada cor aparecendo uma única vez.
+- Botão **✕** para tirar um item da fila.
+- Configuração salva no navegador (localStorage).
+- Layout responsivo para telão, tablet e celular.
 
-## Learn More
+## Hardware
 
-To learn more about Next.js, take a look at the following resources:
+| Item | Quantidade |
+| --- | --- |
+| ESP32 (DevKit) | 1 |
+| Módulo receptor 433 MHz **RXB6** | 1 |
+| Fio de ~17 cm (antena) | 1 |
+| Controles de portão 433 MHz de **código fixo** | até 15 |
+| Cabo USB | 1 |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Ligação
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| RXB6 | ESP32 |
+| --- | --- |
+| VCC | 3V3 |
+| GND | GND |
+| DATA | GPIO 27 |
 
-## Deploy on Vercel
+Solde o fio de ~17 cm no pino **ANT** do módulo. Sem a antena, o alcance cai muito.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Compatibilidade dos controles
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Funcionam controles de **código fixo** (os de dip switch e os simples de 4 botões).
+- **Não funcionam** controles com **rolling code** (como KeeLoq), porque o código muda a cada aperto.
+- A maioria opera em 433,92 MHz, mas confira a frequência na etiqueta do controle.
+- Cada botão do controle envia um código diferente. Cadastre apenas o botão que será usado.
+
+## Firmware do ESP32
+
+Instale a biblioteca **rc-switch** (autor: sui77) pela Library Manager da Arduino IDE e grave este código:
+
+```cpp
+#include <RCSwitch.h>
+
+#define PINO_RX 27
+
+RCSwitch rx;
+unsigned long ultimoCodigo = 0;
+unsigned long ultimoTempo = 0;
+
+void setup() {
+  Serial.begin(115200);
+  rx.enableReceive(digitalPinToInterrupt(PINO_RX));
+  Serial.println("PRONTO");
+}
+
+void loop() {
+  if (rx.available()) {
+    unsigned long codigo = rx.getReceivedValue();
+
+    if (codigo != 0) {
+      // ignora repetição enquanto o botão está sendo segurado (300 ms)
+      bool repetido = (codigo == ultimoCodigo) && (millis() - ultimoTempo < 300);
+      if (!repetido) {
+        Serial.printf("CODE,%lu,%u\n", codigo, rx.getReceivedBitlength());
+      }
+      ultimoCodigo = codigo;
+      ultimoTempo = millis();
+    }
+    rx.resetAvailable();
+  }
+}
+```
+
+## Rodando o projeto
+
+Requisitos: Node.js 18 ou superior.
+
+```bash
+git clone https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
+cd SEU-REPOSITORIO
+npm install
+npm run dev
+```
+
+Abra `http://localhost:3000` no **Chrome** ou **Edge**.
+
+## Como usar
+
+1. Ligue o ESP32 no computador pelo cabo USB.
+2. Na página, clique em **Conectar ESP32** e escolha a porta do ESP32.
+3. Para cada cor, clique em **Aprender** e aperte o botão do controle correspondente. O código aparece ao lado da cor.
+4. Edite o nome de cada cor na caixa de texto (por exemplo, trocar "Azul" por "EUA").
+5. Aperte os controles: a fila mostra a ordem de chegada.
+6. Para tirar alguém da fila, clique no **✕** do item.
+
+O botão **Testar** simula o aperto de uma cor, e serve para ver a interface funcionando sem hardware.
+
+## Deploy na Vercel
+
+O projeto não tem backend nem variáveis de ambiente, então o deploy é direto:
+
+1. Envie o código para um repositório no GitHub.
+2. Na [Vercel](https://vercel.com), clique em **Add New > Project** e importe o repositório.
+3. Mantenha as configurações padrão e clique em **Deploy**.
+
+A Web Serial exige HTTPS, que a Vercel já fornece. A leitura da porta acontece no navegador de quem abre a página, então o ESP32 precisa estar ligado no **computador que está com a página aberta**.
+
+## Compatibilidade de navegador
+
+| Navegador | Suporte |
+| --- | --- |
+| Chrome (desktop) | Sim |
+| Edge (desktop) | Sim |
+| Firefox | Não (sem Web Serial) |
+| Safari | Não (sem Web Serial) |
+
+Nos navegadores sem suporte, a página mostra um aviso e continua funcionando em modo de teste.
+
+## Limitações
+
+- Funciona apenas com controles de código fixo.
+- A fila fica na memória e é perdida ao recarregar a página (a configuração de nomes e códigos é mantida).
+- Se dois controles apertarem com menos de ~1 ms de diferença, a ordem pode ser ambígua.
+- Cores muito parecidas (branco, cinza, preto) podem ser difíceis de distinguir de longe.
+
+## Tecnologias
+
+- [Next.js](https://nextjs.org/) (App Router) e React
+- TypeScript
+- Tailwind CSS
+- Web Serial API
+- ESP32 com a biblioteca rc-switch
+
+## Licença
+
+Defina a licença do projeto (por exemplo, MIT) e adicione o arquivo `LICENSE`.

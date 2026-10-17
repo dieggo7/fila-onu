@@ -1,0 +1,21 @@
+export type ControlColor = { id: string; name: string; hex: string };
+
+export const COLORS: ControlColor[] = [
+  { id: "vermelho", name: "Vermelho", hex: "#e53935" },
+  { id: "azul", name: "Azul", hex: "#1e63e9" },
+  { id: "amarelo", name: "Amarelo", hex: "#fdd835" },
+  { id: "verde", name: "Verde", hex: "#43a047" },
+  { id: "laranja", name: "Laranja", hex: "#fb8c00" },
+  { id: "roxo", name: "Roxo", hex: "#8e24aa" },
+  { id: "rosa", name: "Rosa", hex: "#ec407a" },
+  { id: "marrom", name: "Marrom", hex: "#6d4c41" },
+  { id: "cinza", name: "Cinza", hex: "#9e9e9e" },
+  { id: "preto", name: "Preto", hex: "#3a3f45" },
+  { id: "branco", name: "Branco", hex: "#fafafa" },
+  { id: "ciano", name: "Ciano", hex: "#00acc1" },
+  { id: "lima", name: "Lima", hex: "#c0ca33" },
+  { id: "vinho", name: "Vinho", hex: "#880e4f" },
+  { id: "marinho", name: "Marinho", hex: "#1a237e" },
+];
+
+export const COUNTRY_SUGGESTIONS = ["EUA", "Brasil", "Argentina", "Alemanha", "França", "Espanha", "Itália", "Portugal", "Inglaterra", "Japão", "China", "Coreia do Sul", "México", "Canadá", "Chile", "Uruguai", "Colômbia", "Holanda", "Bélgica", "Austrália", "Índia", "Rússia", "Turquia", "Egito", "África do Sul", "Suíça", "Suécia", "Polônia"];
