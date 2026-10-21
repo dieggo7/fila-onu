@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 type SerialPortLike = {
   readable: ReadableStream<Uint8Array> | null;
@@ -9,25 +15,53 @@ type SerialPortLike = {
   addEventListener(type: "disconnect", listener: () => void): void;
   removeEventListener(type: "disconnect", listener: () => void): void;
 };
-type SerialNavigator = Navigator & { serial?: { requestPort(): Promise<SerialPortLike> } };
-type SerialCallbacks = { onCode: (code: number) => void; onError: (message: string) => void; onDisconnect: () => void };
+type SerialNavigator = Navigator & {
+  serial?: { requestPort(): Promise<SerialPortLike> };
+};
+type SerialCallbacks = {
+  onCode: (code: number) => void;
+  onError: (message: string) => void;
+  onDisconnect: () => void;
+};
 
-function serialSupported() { return "serial" in navigator; }
-function serverSerialSupported() { return true; }
-function subscribeToSupport() { return () => undefined; }
+function serialSupported() {
+  return "serial" in navigator;
+}
+function serverSerialSupported() {
+  return true;
+}
+function subscribeToSupport() {
+  return () => undefined;
+}
 
-export function useSerial(onCode: (code: number) => void, onError: (message: string) => void, onDisconnect: () => void) {
+export function useSerial(
+  onCode: (code: number) => void,
+  onError: (message: string) => void,
+  onDisconnect: () => void,
+) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
-  const supported = useSyncExternalStore(subscribeToSupport, serialSupported, serverSerialSupported);
-  const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const supported = useSyncExternalStore(
+    subscribeToSupport,
+    serialSupported,
+    serverSerialSupported,
+  );
+  const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(
+    null,
+  );
   const portRef = useRef<SerialPortLike | null>(null);
   const aliveRef = useRef(true);
-  const callbacksRef = useRef<SerialCallbacks>({ onCode, onError, onDisconnect });
+  const callbacksRef = useRef<SerialCallbacks>({
+    onCode,
+    onError,
+    onDisconnect,
+  });
   const disconnectRef = useRef<() => Promise<void>>(async () => undefined);
   const handlerRef = useRef<() => void>(() => undefined);
 
-  useEffect(() => { callbacksRef.current = { onCode, onError, onDisconnect }; }, [onCode, onError, onDisconnect]);
+  useEffect(() => {
+    callbacksRef.current = { onCode, onError, onDisconnect };
+  }, [onCode, onError, onDisconnect]);
 
   const disconnect = useCallback(async () => {
     const reader = readerRef.current;
@@ -35,12 +69,24 @@ export function useSerial(onCode: (code: number) => void, onError: (message: str
     readerRef.current = null;
     portRef.current = null;
     if (reader) {
-      try { await reader.cancel(); } catch { /* A porta pode ter sido removida. */ }
-      try { reader.releaseLock(); } catch { /* O loop pode já ter liberado o leitor. */ }
+      try {
+        await reader.cancel();
+      } catch {
+        /* A porta pode ter sido removida. */
+      }
+      try {
+        reader.releaseLock();
+      } catch {
+        /* O loop pode já ter liberado o leitor. */
+      }
     }
     if (port) {
       port.removeEventListener("disconnect", handlerRef.current);
-      try { await port.close(); } catch { /* A porta pode já estar fechada. */ }
+      try {
+        await port.close();
+      } catch {
+        /* A porta pode já estar fechada. */
+      }
     }
     if (aliveRef.current) setConnected(false);
   }, []);
@@ -58,12 +104,16 @@ export function useSerial(onCode: (code: number) => void, onError: (message: str
       const port = await serial.requestPort();
       if (!aliveRef.current) return;
       await port.open({ baudRate: 115200 });
-      if (!aliveRef.current) { await port.close(); return; }
+      if (!aliveRef.current) {
+        await port.close();
+        return;
+      }
       portRef.current = port;
       port.addEventListener("disconnect", handlerRef.current);
       setConnected(true);
       const reader = port.readable?.getReader();
-      if (!reader) throw new Error("A porta serial não está disponível para leitura.");
+      if (!reader)
+        throw new Error("A porta serial não está disponível para leitura.");
       readerRef.current = reader;
       const decoder = new TextDecoder();
       let buffer = "";
@@ -79,8 +129,14 @@ export function useSerial(onCode: (code: number) => void, onError: (message: str
         }
       }
     } catch (cause) {
-      if (aliveRef.current && !(cause instanceof DOMException && cause.name === "NotFoundError")) {
-        const message = cause instanceof Error ? cause.message : "Não foi possível conectar ao ESP32.";
+      if (
+        aliveRef.current &&
+        !(cause instanceof DOMException && cause.name === "NotFoundError")
+      ) {
+        const message =
+          cause instanceof Error
+            ? cause.message
+            : "Não foi possível conectar ao ESP32.";
         setError(message);
         callbacksRef.current.onError(message);
       }
@@ -96,7 +152,10 @@ export function useSerial(onCode: (code: number) => void, onError: (message: str
 
   useEffect(() => {
     aliveRef.current = true;
-    return () => { aliveRef.current = false; void disconnectRef.current(); };
+    return () => {
+      aliveRef.current = false;
+      void disconnectRef.current();
+    };
   }, []);
   return { connected, supported, error, connect, disconnect };
 }
