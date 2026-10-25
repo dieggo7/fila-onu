@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { createTopic } from "./sessionStore";
 import { useSession } from "./useSession";
+import { createSpeechRecord } from "./speechRecords";
 
 export function useTopics() {
   const { session, update } = useSession();
@@ -13,10 +14,18 @@ export function useTopics() {
   const selectTopic = useCallback(
     (id: string) =>
       update((current) => {
+        const finishedAt = Date.now();
         const previous = current.topics.find(
           (topic) => topic.id === current.activeTopicId,
         );
-        const hadSpeaker = Boolean(previous?.currentSpeaker);
+        const record = previous
+          ? createSpeechRecord(
+              previous.id,
+              previous,
+              current.defaultDuration,
+              finishedAt,
+            )
+          : null;
         const topics = current.topics
           .map((topic) => {
             if (topic.id !== current.activeTopicId || !topic.currentSpeaker)
@@ -24,25 +33,25 @@ export function useTopics() {
             return {
               ...topic,
               currentSpeaker: null,
-              history: [
-                ...topic.history,
-                {
-                  id: topic.currentSpeaker,
-                  durationSeconds: Math.max(
-                    0,
-                    current.defaultDuration - topic.remainingSeconds,
-                  ),
-                  finishedAt: Date.now(),
-                },
-              ],
+              currentSpeakerStartedAt: null,
+              currentSpeakerTimerStarted: false,
+              currentSpeakerTimerInitialSec: null,
+              currentSpeakerAllottedSec: null,
             };
           })
           .map((topic) =>
-            topic.id === id && hadSpeaker
+            topic.id === id && record
               ? { ...topic, remainingSeconds: current.defaultDuration }
               : topic,
           );
-        return { ...current, topics, activeTopicId: id };
+        return {
+          ...current,
+          topics,
+          activeTopicId: id,
+          speechLog: record
+            ? [...current.speechLog, record]
+            : current.speechLog,
+        };
       }),
     [update],
   );
@@ -53,32 +62,40 @@ export function useTopics() {
         ...createTopic(title),
         remainingSeconds: session.defaultDuration,
       };
-      update((current) => ({
-        ...current,
-        topics: [
-          ...current.topics.map((previous) =>
-            previous.id === current.activeTopicId && previous.currentSpeaker
-              ? {
-                  ...previous,
-                  currentSpeaker: null,
-                  history: [
-                    ...previous.history,
-                    {
-                      id: previous.currentSpeaker,
-                      durationSeconds: Math.max(
-                        0,
-                        current.defaultDuration - previous.remainingSeconds,
-                      ),
-                      finishedAt: Date.now(),
-                    },
-                  ],
-                }
-              : previous,
-          ),
-          topic,
-        ],
-        activeTopicId: topic.id,
-      }));
+      update((current) => {
+        const finishedAt = Date.now();
+        const previous = current.topics.find(
+          (item) => item.id === current.activeTopicId,
+        );
+        const record = previous
+          ? createSpeechRecord(
+              previous.id,
+              previous,
+              current.defaultDuration,
+              finishedAt,
+            )
+          : null;
+        return {
+          ...current,
+          topics: [
+            ...current.topics.map((item) =>
+              item.id === current.activeTopicId && item.currentSpeaker
+                ? {
+                    ...item,
+                    currentSpeaker: null,
+                    currentSpeakerStartedAt: null,
+                    currentSpeakerTimerStarted: false,
+                    currentSpeakerTimerInitialSec: null,
+                    currentSpeakerAllottedSec: null,
+                  }
+                : item,
+            ),
+            topic,
+          ],
+          activeTopicId: topic.id,
+          speechLog: record ? [...current.speechLog, record] : current.speechLog,
+        };
+      });
     },
     [session.defaultDuration, update],
   );
@@ -100,6 +117,7 @@ export function useTopics() {
         return {
           ...current,
           topics,
+          speechLog: current.speechLog.filter((speech) => speech.topicId !== id),
           activeTopicId:
             current.activeTopicId === id ? topics[0].id : current.activeTopicId,
         };

@@ -6,7 +6,7 @@ import { useSpeakers } from "./useSpeakers";
 
 export function useTimer() {
   const { activeTopicId, defaultDuration, setDefaultDuration } = useTopics();
-  const { topic, setRemaining, tick } = useSpeakers();
+  const { topic, setRemaining, tick, markTimerStarted } = useSpeakers();
   const [runningTopicId, setRunningTopicId] = useState<string | null>(null);
   const running =
     runningTopicId === activeTopicId && Boolean(topic.currentSpeaker);
@@ -18,13 +18,17 @@ export function useTimer() {
   }, [activeTopicId, remaining, running, tick, topic.currentSpeaker]);
 
   const start = useCallback(() => {
-    if (topic.currentSpeaker) setRunningTopicId(activeTopicId);
-  }, [activeTopicId, topic.currentSpeaker]);
+    if (topic.currentSpeaker) {
+      markTimerStarted(topic.remainingSeconds);
+      setRunningTopicId(activeTopicId);
+    }
+  }, [activeTopicId, markTimerStarted, topic.currentSpeaker, topic.remainingSeconds]);
   const pause = useCallback(() => setRunningTopicId(null), []);
   const restart = useCallback(() => {
     setRunningTopicId(null);
     setRemaining(defaultDuration);
-  }, [defaultDuration, setRemaining]);
+    markTimerStarted(defaultDuration, false);
+  }, [defaultDuration, markTimerStarted, setRemaining]);
   const setDuration = useCallback(
     (seconds: number) => {
       setDefaultDuration(seconds);

@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import type { DebateTopic } from "./sessionStore";
 import { useTopics } from "./useTopics";
+import { createSpeechRecord } from "./speechRecords";
 
 export type UndoChange = { label: string; undo: () => void };
 
@@ -30,30 +31,38 @@ export function useSpeakers() {
 
   const call = useCallback(
     (id: string) =>
-      editTopic(activeTopicId, (topic) => {
-        const waiting = topic.waiting.filter((speaker) => speaker !== id);
-        const history = topic.currentSpeaker
-          ? [
-              ...topic.history,
-              {
-                id: topic.currentSpeaker,
-                durationSeconds: Math.max(
-                  0,
-                  defaultDuration - topic.remainingSeconds,
-                ),
-                finishedAt: Date.now(),
-              },
-            ]
-          : topic.history;
+      update((session) => {
+        const current = session.topics.find(
+          (topic) => topic.id === activeTopicId,
+        );
+        if (!current) return session;
+        const finishedAt = Date.now();
+        const record = createSpeechRecord(
+          activeTopicId,
+          current,
+          defaultDuration,
+          finishedAt,
+        );
         return {
-          ...topic,
-          waiting,
-          currentSpeaker: id,
-          remainingSeconds: defaultDuration,
-          history,
+          ...session,
+          topics: session.topics.map((topic) =>
+            topic.id === activeTopicId
+              ? {
+                  ...topic,
+                  waiting: topic.waiting.filter((speaker) => speaker !== id),
+                  currentSpeaker: id,
+                  currentSpeakerStartedAt: finishedAt,
+                  currentSpeakerTimerStarted: false,
+                  currentSpeakerTimerInitialSec: null,
+                  currentSpeakerAllottedSec: defaultDuration,
+                  remainingSeconds: defaultDuration,
+                }
+              : topic,
+          ),
+          speechLog: record ? [...session.speechLog, record] : session.speechLog,
         };
       }),
-    [activeTopicId, defaultDuration, editTopic],
+    [activeTopicId, defaultDuration, update],
   );
 
   const finish = useCallback((): UndoChange | null => {
@@ -61,36 +70,54 @@ export function useSpeakers() {
     const speakerId = activeTopic.currentSpeaker;
     const finishedAt = Date.now();
     const previousRemaining = activeTopic.remainingSeconds;
-    editTopic(activeTopicId, (topic) => ({
-      ...topic,
-      currentSpeaker: null,
-      history: [
-        ...topic.history,
-        {
-          id: speakerId,
-          durationSeconds: Math.max(
-            0,
-            defaultDuration - topic.remainingSeconds,
-          ),
-          finishedAt,
-        },
-      ],
-      remainingSeconds: defaultDuration,
+    const record = createSpeechRecord(
+      activeTopicId,
+      activeTopic,
+      defaultDuration,
+      finishedAt,
+    );
+    if (!record) return null;
+    update((session) => ({
+      ...session,
+      topics: session.topics.map((topic) =>
+        topic.id === activeTopicId
+          ? {
+              ...topic,
+              currentSpeaker: null,
+              currentSpeakerStartedAt: null,
+              currentSpeakerTimerStarted: false,
+              currentSpeakerTimerInitialSec: null,
+              currentSpeakerAllottedSec: null,
+              remainingSeconds: defaultDuration,
+            }
+          : topic,
+      ),
+      speechLog: [...session.speechLog, record],
     }));
     return {
       label: "Fala finalizada",
       undo: () =>
-        editTopic(activeTopicId, (topic) => ({
-          ...topic,
-          currentSpeaker: topic.currentSpeaker ?? speakerId,
-          remainingSeconds: previousRemaining,
-          history: topic.history.filter(
-            (speech) =>
-              speech.id !== speakerId || speech.finishedAt !== finishedAt,
+        update((session) => ({
+          ...session,
+          topics: session.topics.map((topic) =>
+            topic.id === activeTopicId
+              ? {
+                  ...topic,
+                  currentSpeaker: topic.currentSpeaker ?? speakerId,
+                  currentSpeakerStartedAt: activeTopic.currentSpeakerStartedAt,
+                  currentSpeakerTimerStarted: activeTopic.currentSpeakerTimerStarted,
+                  currentSpeakerTimerInitialSec: activeTopic.currentSpeakerTimerInitialSec,
+                  currentSpeakerAllottedSec: activeTopic.currentSpeakerAllottedSec,
+                  remainingSeconds: previousRemaining,
+                }
+              : topic,
+          ),
+          speechLog: session.speechLog.filter(
+            (speech) => speech.id !== record.id,
           ),
         })),
     };
-  }, [activeTopic, activeTopicId, defaultDuration, editTopic]);
+  }, [activeTopic, activeTopicId, defaultDuration, update]);
 
   const remove = useCallback(
     (id: string): UndoChange => {
@@ -144,6 +171,14 @@ export function useSpeakers() {
       })),
     [activeTopicId, editTopic],
   );
+  const markTimerStarted = useCallback(
+    (initialSeconds: number, markStarted = true) => editTopic(activeTopicId, (topic) =>
+      topic.currentSpeaker
+        ? { ...topic, currentSpeakerTimerStarted: topic.currentSpeakerTimerStarted || markStarted, currentSpeakerTimerInitialSec: initialSeconds }
+        : topic,
+    ),
+    [activeTopicId, editTopic],
+  );
   const tick = useCallback(
     () =>
       editTopic(activeTopicId, (topic) => ({
@@ -160,6 +195,7 @@ export function useSpeakers() {
     remove,
     move,
     setRemaining,
+    markTimerStarted,
     tick,
   };
 }

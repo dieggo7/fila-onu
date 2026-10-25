@@ -106,6 +106,16 @@ async function chooseSerialPort(ports: SerialPort[]): Promise<string> {
 
 function configureSerialPermissions() {
   const appSession = session.defaultSession;
+  appSession.on("will-download", (_event, item) => {
+    if (item.getInitiatorOrigin() !== allowedOrigin) return;
+    const filename = item.getFilename();
+    const extension = filename.toLowerCase().endsWith(".csv") ? "csv" : "json";
+    item.setSaveDialogOptions({
+      title: "Salvar arquivo do VOX",
+      defaultPath: filename,
+      filters: [{ name: extension === "csv" ? "Planilha CSV" : "Backup JSON", extensions: [extension] }],
+    });
+  });
   appSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
     permission === "serial" && requestingOrigin === allowedOrigin,
   );

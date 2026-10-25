@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { COLORS, COUNTRY_SUGGESTIONS } from "@/lib/colors";
 import type { UndoChange } from "@/lib/useSpeakers";
 import { useControls } from "@/lib/useControls";
@@ -9,8 +9,11 @@ import { useTimer } from "@/lib/useTimer";
 import { useTopics } from "@/lib/useTopics";
 import { useSerial } from "@/lib/useSerial";
 import { BrandLogo } from "@/components/BrandLogo";
+import { ReportView } from "@/components/report/ReportView";
+import { useSpeechLog } from "@/lib/useSpeechLog";
+import { replaceSession, STORAGE_ERROR_EVENT } from "@/lib/sessionStore";
 
-type Screen = "queue" | "controls";
+type Screen = "queue" | "report" | "controls";
 type Toast = {
   id: number;
   message: string;
@@ -33,10 +36,12 @@ function parseTime(value: string) {
 export default function Home() {
   const { controls, rename, bindCode } = useControls();
   const topics = useTopics();
+  const speechLog = useSpeechLog();
   const speakers = useSpeakers();
   const { enroll } = speakers;
   const timer = useTimer();
   const [screen, setScreen] = useState<Screen>("queue");
+  const [screenChanged, setScreenChanged] = useState(false);
   const [learning, setLearning] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [fullScreen, setFullScreen] = useState(false);
@@ -45,10 +50,15 @@ export default function Home() {
   const [editingTopic, setEditingTopic] = useState(false);
   const [topicDraft, setTopicDraft] = useState("");
   const [sequence, setSequence] = useState<string[]>([]);
+  const [exitingSpeakers, setExitingSpeakers] = useState<Record<string, number>>({});
   const sequenceRef = useRef<string[]>([]);
   const topicInput = useRef<HTMLInputElement>(null);
   const durationInput = useRef<HTMLInputElement>(null);
   const appRef = useRef<HTMLElement>(null);
+  const speakerRows = useRef(new Map<string, HTMLLIElement>());
+  const speakerRowPositions = useRef(new Map<string, number>());
+  const speakerListInitialized = useRef(false);
+  const exitTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const learnRef = useRef<string | null>(null);
   const controlsRef = useRef(controls);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,8 +118,6 @@ export default function Home() {
 
   const serial = useSerial(
     processCode,
-    (message) => notify(message, "error", 0),
-    () => notify("Cabo desconectado. Conecte o ESP32 novamente.", "error"),
   );
   const linkedCount = Object.values(controls).filter(
     (item) => item.code !== null,
@@ -118,16 +126,75 @@ export default function Home() {
     (color) => color.id === speakers.topic.currentSpeaker,
   );
   const nextSpeakers = speakers.topic.waiting;
+  const visualSpeakerRows = nextSpeakers.map((id, index) => ({
+    id,
+    index,
+    exiting: false,
+  }));
+  for (const [id, index] of Object.entries(exitingSpeakers)) {
+    if (nextSpeakers.includes(id)) continue;
+    visualSpeakerRows.splice(Math.min(index, visualSpeakerRows.length), 0, {
+      id,
+      index,
+      exiting: true,
+    });
+  }
+
+  useLayoutEffect(() => {
+    const motion = getComputedStyle(document.documentElement);
+    const duration = Number.parseFloat(
+      motion.getPropertyValue("--motion-duration"),
+    );
+    const easing = motion.getPropertyValue("--motion-ease").trim();
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const nextPositions = new Map<string, number>();
+    for (const id of nextSpeakers) {
+      const row = speakerRows.current.get(id);
+      if (!row) continue;
+      const top = row.getBoundingClientRect().top;
+      const previousTop = speakerRowPositions.current.get(id);
+      if (!reducedMotion && previousTop !== undefined && previousTop !== top) {
+        row.animate(
+          [
+            { transform: `translateY(${previousTop - top}px)` },
+            { transform: "translateY(0)" },
+          ],
+          { duration, easing },
+        );
+      } else if (!reducedMotion && previousTop === undefined && speakerListInitialized.current) {
+        row.animate(
+          [
+            { opacity: 0, transform: "translateY(8px)" },
+            { opacity: 1, transform: "translateY(0)" },
+          ],
+          { duration, easing },
+        );
+      }
+      nextPositions.set(id, top);
+    }
+    speakerRowPositions.current = nextPositions;
+    speakerListInitialized.current = true;
+  }, [nextSpeakers]);
 
   useEffect(() => {
+    const pendingExitTimers = exitTimers.current;
     const onFullscreenChange = () =>
       setFullScreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => {
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       if (toastTimer.current) clearTimeout(toastTimer.current);
+      for (const timerId of pendingExitTimers.values()) clearTimeout(timerId);
     };
   }, []);
+
+  useEffect(() => {
+    const onStorageError = () => notify("O armazenamento do navegador está cheio. As alterações permanecem apenas nesta sessão.", "error", 0);
+    window.addEventListener(STORAGE_ERROR_EVENT, onStorageError);
+    return () => window.removeEventListener(STORAGE_ERROR_EVENT, onStorageError);
+  }, [notify]);
 
   function startLearning(id: string) {
     sequenceRef.current = [];
@@ -140,6 +207,20 @@ export default function Home() {
   function dismissToast() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(null);
+  }
+
+  function animateSpeakerExit(id: string, index: number) {
+    const oldTimer = exitTimers.current.get(id);
+    if (oldTimer) clearTimeout(oldTimer);
+    setExitingSpeakers((current) => ({ ...current, [id]: index }));
+    exitTimers.current.set(id, setTimeout(() => {
+      exitTimers.current.delete(id);
+      setExitingSpeakers((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }, 180));
   }
 
   async function toggleFullscreen() {
@@ -169,8 +250,8 @@ export default function Home() {
       "Próximos oradores:",
       ...topic.waiting.map((id, index) => `${index + 1}. ${nameFor(id)}`),
       "Já falaram:",
-      ...topic.history.map(
-        (speech, index) => `${index + 1}. ${nameFor(speech.id)}`,
+      ...speechLog.records.filter((speech) => speech.topicId === topic.id).map(
+        (speech, index) => `${index + 1}. ${nameFor(COLORS[speech.delegationId - 1]?.id ?? "")}`,
       ),
     ];
     void navigator.clipboard.writeText(lines.join("\n")).then(
@@ -228,7 +309,7 @@ export default function Home() {
     if (topics.topics.length <= 1) return;
     if (
       window.confirm(
-        `Excluir o tópico “${topics.activeTopic.title}” e todo o seu histórico?`,
+        `Excluir o tópico “${topics.activeTopic.title}”? As falas deste tópico também serão apagadas do relatório.`,
       )
     )
       topics.remove(topics.activeTopicId);
@@ -255,47 +336,55 @@ export default function Home() {
           <BrandLogo />
         </a>
         <div className="connection-area">
-          {serial.connected ? (
-            <>
-              <span className="status">
-                <i />
-                Conectado
-              </span>
-              <button
-                className="button button-secondary"
-                onClick={() => void serial.disconnect()}
-              >
-                Desconectar
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="status disconnected">
-                <i />
-                Desconectado
-              </span>
-              <button
-                className="button button-primary"
-                onClick={() => void serial.connect()}
-              >
-                Conectar
-              </button>
-            </>
+          <span className={`status ${serial.status}`} role="status" aria-live="polite">
+            <i />
+            {!serial.supported && "Web Serial indisponível neste navegador."}
+            {serial.supported && serial.status === "searching" && "Procurando receptor..."}
+            {serial.supported && serial.status === "connected" && "Receptor conectado"}
+            {serial.supported && serial.status === "disconnected" &&
+              "Receptor desconectado. Plugue o cabo USB."}
+            {serial.supported && serial.status === "busy" &&
+              "Porta em uso por outro programa. Feche o Monitor Serial."}
+          </span>
+          {serial.manualAvailable && (
+            <button
+              className="serial-manual-link"
+              onClick={() => void serial.chooseManually()}
+            >
+              Escolher porta manualmente
+            </button>
           )}
         </div>
       </header>
       <nav className="tabs" aria-label="Telas">
+        <span
+          className={`tab-indicator ${screen}`}
+          aria-hidden="true"
+        />
         <button
           className={`tab ${screen === "queue" ? "active" : ""}`}
           aria-current={screen === "queue" ? "page" : undefined}
-          onClick={() => setScreen("queue")}
+          onClick={() => {
+            setScreenChanged(true);
+            setScreen("queue");
+          }}
         >
           Debate
         </button>
         <button
+          className={`tab ${screen === "report" ? "active" : ""}`}
+          aria-current={screen === "report" ? "page" : undefined}
+          onClick={() => { setScreenChanged(true); setScreen("report"); }}
+        >
+          Relatório
+        </button>
+        <button
           className={`tab ${screen === "controls" ? "active" : ""}`}
           aria-current={screen === "controls" ? "page" : undefined}
-          onClick={() => setScreen("controls")}
+          onClick={() => {
+            setScreenChanged(true);
+            setScreen("controls");
+          }}
         >
           Controles
         </button>
@@ -326,28 +415,15 @@ export default function Home() {
         </div>
       )}
 
-      {screen === "queue" ? (
-        <section className="debate-view" aria-label="Debate">
+      {screen === "report" ? <ReportView
+        session={speechLog.session}
+        topics={topics.topics}
+        onImport={replaceSession}
+        notify={notify}
+      /> : screen === "queue" ? (
+        <section className={`debate-view ${screenChanged ? "screen-transition" : ""}`} aria-label="Debate">
           <div className="topic-bar">
             <div className="topic-picker">
-              <label className="visually-hidden" htmlFor="active-topic">
-                Tópico ativo
-              </label>
-              <select
-                id="active-topic"
-                value={topics.activeTopicId}
-                onChange={(event) => {
-                  timer.pause();
-                  topics.selectTopic(event.target.value);
-                  setEditingTopic(false);
-                }}
-              >
-                {topics.topics.map((topic) => (
-                  <option key={topic.id} value={topic.id}>
-                    {topic.title}
-                  </option>
-                ))}
-              </select>
               <div className="topic-title-editor">
                 {editingTopic ? (
                   <input
@@ -366,12 +442,28 @@ export default function Home() {
                   />
                 ) : (
                   <>
-                    <button
-                      className="topic-title-action"
-                      onClick={() => beginTopicEdit()}
+                    <label className="visually-hidden" htmlFor="active-topic">
+                      Tópico ativo
+                    </label>
+                    <select
+                      id="active-topic"
+                      className="active-topic-select"
+                      value={topics.activeTopicId}
+                      onChange={(event) => {
+                        timer.pause();
+                        setExitingSpeakers({});
+                        for (const timerId of exitTimers.current.values()) clearTimeout(timerId);
+                        exitTimers.current.clear();
+                        topics.selectTopic(event.target.value);
+                        setEditingTopic(false);
+                      }}
                     >
-                      {topics.activeTopic.title}
-                    </button>
+                      {topics.topics.map((topic) => (
+                        <option key={topic.id} value={topic.id}>
+                          {topic.title}
+                        </option>
+                      ))}
+                    </select>
                     <button
                       className="icon-button"
                       aria-label="Renomear tópico"
@@ -384,7 +476,7 @@ export default function Home() {
                 )}
               </div>
               <button
-                className="button button-secondary new-topic"
+                className="button button-primary new-topic"
                 onClick={createTopic}
               >
                 <span aria-hidden="true">+</span> Novo tópico
@@ -414,7 +506,7 @@ export default function Home() {
             <div className="speaker-ident">
               <h1 id="speaker-heading">Falando agora</h1>
               {currentColor && (
-                <div className="current-speaker">
+                <div className="current-speaker" key={currentColor.id}>
                   <span
                     className="speaker-swatch"
                     style={{ background: currentColor.hex }}
@@ -423,37 +515,39 @@ export default function Home() {
                 </div>
               )}
               {!currentColor && (
-                <p className="no-speaker">Nenhuma delegação chamada</p>
+                <p className="no-speaker" key="empty-speaker">
+                  Ninguém falando
+                </p>
               )}
             </div>
             <div
-              className="timer-readout"
+              className={`timer-readout ${!speakers.topic.currentSpeaker ? "no-speaker-time" : ""}`}
               aria-label={
                 speakers.topic.currentSpeaker
                   ? `Tempo restante ${formatTime(timer.remaining)}`
                   : "Sem orador no momento"
               }
             >
-              {speakers.topic.currentSpeaker
-                ? formatTime(timer.remaining)
-                : "--:--"}
+              {formatTime(speakers.topic.currentSpeaker ? timer.remaining : timer.defaultDuration)}
             </div>
-            <div className="timer-controls">
-              <button
-                className="button button-primary"
-                onClick={timer.running ? timer.pause : timer.start}
-                disabled={!speakers.topic.currentSpeaker}
-              >
-                {timer.running ? "Pausar" : "Iniciar"}
-              </button>
-            </div>
-            <button
-              className="button finish-button"
-              onClick={finishSpeech}
-              disabled={!speakers.topic.currentSpeaker}
-            >
-              Finalizar fala
-            </button>
+            {speakers.topic.currentSpeaker && (
+              <>
+                <div className="timer-controls">
+                  <button
+                    className="button button-primary"
+                    onClick={timer.running ? timer.pause : timer.start}
+                  >
+                    {timer.running ? "Pausar" : "Iniciar"}
+                  </button>
+                </div>
+                <button
+                  className="button finish-button"
+                  onClick={finishSpeech}
+                >
+                  Finalizar fala
+                </button>
+              </>
+            )}
           </section>
 
           <div className="debate-tools">
@@ -524,41 +618,51 @@ export default function Home() {
           </div>
           <ol
             className="speaker-list"
+            key={topics.activeTopicId}
             aria-live="polite"
             aria-relevant="additions removals"
           >
-            {speakers.topic.waiting.map((id, index) => {
+            {visualSpeakerRows.map(({ id, index, exiting }) => {
               const color = COLORS.find((item) => item.id === id);
               if (!color) return null;
-              const timesSpoken = speakers.topic.history.filter(
-                (speech) => speech.id === id,
+              const timesSpoken = speechLog.records.filter(
+                (speech) => speech.topicId === topics.activeTopicId && speech.delegationId === COLORS.findIndex((color) => color.id === id) + 1,
               ).length;
               return (
                 <li
-                  className="speaker-row"
-                  key={`${id}-${index}`}
+                  className={`speaker-row ${exiting ? "is-exiting" : ""}`}
+                  key={id}
+                  aria-hidden={exiting || undefined}
+                  inert={exiting || undefined}
+                  ref={(row) => {
+                    if (row) speakerRows.current.set(id, row);
+                    else speakerRows.current.delete(id);
+                  }}
                   style={
                     { "--speaker-color": color.hex } as React.CSSProperties
                   }
                 >
-                  <span className="speaker-position">{index + 1}.</span>
-                  <div className="speaker-description">
-                    <span className="speaker-swatch" aria-hidden="true" />
-                    <span className="speaker-name">{nameFor(id)}</span>
-                    <span className="spoken-count">
-                      {timesSpoken
-                        ? `Falou ${timesSpoken}x`
-                        : "Ainda não falou"}
-                    </span>
-                  </div>
-                  <div className="speaker-actions">
+                  <div className="speaker-row-content">
+                    <span className="speaker-position">{index + 1}.</span>
+                    <div className="speaker-description">
+                      <span className="speaker-swatch" aria-hidden="true" />
+                      <span className="speaker-name">{nameFor(id)}</span>
+                      <span className="spoken-count">
+                        {timesSpoken
+                          ? `Falou ${timesSpoken}x`
+                          : "Ainda não falou"}
+                      </span>
+                    </div>
+                    <div className="speaker-actions">
                     <button
                       className="button button-primary call-button"
                       onClick={() => {
+                        animateSpeakerExit(id, index);
                         timer.pause();
                         speakers.call(id);
                       }}
                       aria-label={`Chamar ${nameFor(id)}`}
+                      disabled={exiting}
                     >
                       Chamar
                     </button>
@@ -573,7 +677,7 @@ export default function Home() {
                         <button
                           className="icon-button"
                           aria-label={`Subir ${nameFor(id)}`}
-                          disabled={index === 0}
+                          disabled={exiting || index === 0}
                           onClick={() => speakers.move(id, -1)}
                         >
                           ↑
@@ -581,7 +685,7 @@ export default function Home() {
                         <button
                           className="icon-button"
                           aria-label={`Descer ${nameFor(id)}`}
-                          disabled={index === speakers.topic.waiting.length - 1}
+                          disabled={exiting || index === speakers.topic.waiting.length - 1}
                           onClick={() => speakers.move(id, 1)}
                         >
                           ↓
@@ -590,6 +694,7 @@ export default function Home() {
                           className="icon-button danger-icon"
                           aria-label={`Remover ${nameFor(id)} da lista`}
                           onClick={() => {
+                            animateSpeakerExit(id, index);
                             const change = speakers.remove(id);
                             notify(change.label, "info", 6000, change.undo);
                           }}
@@ -598,6 +703,7 @@ export default function Home() {
                         </button>
                       </div>
                     </details>
+                    </div>
                   </div>
                 </li>
               );
@@ -612,14 +718,14 @@ export default function Home() {
             onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
           >
             <summary>
-              Já falaram <span>{speakers.topic.history.length}</span>
+              Já falaram <span>{speechLog.records.filter((speech) => speech.topicId === topics.activeTopicId).length}</span>
             </summary>
             <ol>
-              {speakers.topic.history.map((speech, index) => (
-                <li key={`${speech.id}-${speech.finishedAt}-${index}`}>
+              {speechLog.records.filter((speech) => speech.topicId === topics.activeTopicId).map((speech, index) => (
+                <li key={speech.id}>
                   <span>{index + 1}.</span>
-                  {nameFor(speech.id)}
-                  <small>{formatTime(speech.durationSeconds)}</small>
+                  {nameFor(COLORS[speech.delegationId - 1]?.id ?? "")}
+                  <small>{speech.durationSec === null ? "—" : formatTime(speech.durationSec)}</small>
                 </li>
               ))}
             </ol>
@@ -660,7 +766,7 @@ export default function Home() {
           </div>
         </section>
       ) : (
-        <section className="controls-view" aria-labelledby="controls-title">
+        <section className={`controls-view ${screenChanged ? "screen-transition" : ""}`} aria-labelledby="controls-title">
           <div className="controls-heading">
             <div>
               <h1 id="controls-title">Controles</h1>
