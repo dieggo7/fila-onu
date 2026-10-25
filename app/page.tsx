@@ -11,7 +11,7 @@ import { useSerial } from "@/lib/useSerial";
 import { BrandLogo } from "@/components/BrandLogo";
 import { ReportView } from "@/components/report/ReportView";
 import { useSpeechLog } from "@/lib/useSpeechLog";
-import { replaceSession, STORAGE_ERROR_EVENT } from "@/lib/sessionStore";
+import { STORAGE_ERROR_EVENT } from "@/lib/sessionStore";
 
 type Screen = "queue" | "report" | "controls";
 type Toast = {
@@ -372,13 +372,6 @@ export default function Home() {
           Debate
         </button>
         <button
-          className={`tab ${screen === "report" ? "active" : ""}`}
-          aria-current={screen === "report" ? "page" : undefined}
-          onClick={() => { setScreenChanged(true); setScreen("report"); }}
-        >
-          Relatório
-        </button>
-        <button
           className={`tab ${screen === "controls" ? "active" : ""}`}
           aria-current={screen === "controls" ? "page" : undefined}
           onClick={() => {
@@ -387,6 +380,13 @@ export default function Home() {
           }}
         >
           Controles
+        </button>
+        <button
+          className={`tab ${screen === "report" ? "active" : ""}`}
+          aria-current={screen === "report" ? "page" : undefined}
+          onClick={() => { setScreenChanged(true); setScreen("report"); }}
+        >
+          Relatório
         </button>
       </nav>
 
@@ -418,7 +418,6 @@ export default function Home() {
       {screen === "report" ? <ReportView
         session={speechLog.session}
         topics={topics.topics}
-        onImport={replaceSession}
         notify={notify}
       /> : screen === "queue" ? (
         <section className={`debate-view ${screenChanged ? "screen-transition" : ""}`} aria-label="Debate">

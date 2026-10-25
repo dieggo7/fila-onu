@@ -230,17 +230,14 @@ function safeGet(key: string) {
 }
 
 function persistRaw(raw: string) {
-  let persisted = true;
   try {
     localStorage.setItem(SESSION_KEY, raw);
     memorySnapshot = "";
   } catch {
-    persisted = false;
     memorySnapshot = raw;
     window.dispatchEvent(new Event(STORAGE_ERROR_EVENT));
   }
   window.dispatchEvent(new Event(CHANGE_EVENT));
-  return persisted;
 }
 
 export function readRawSession() {
@@ -267,8 +264,4 @@ export function writeSession(
 ) {
   const current = parseSession(readRawSession());
   persistRaw(JSON.stringify(update(current)));
-}
-
-export function replaceSession(session: DebateSession) {
-  return persistRaw(JSON.stringify(session));
 }

@@ -1755,8 +1755,8 @@ body { font-family: var(--font-ui); }
   transition: transform var(--motion-duration) var(--motion-ease);
 }
 .tabs .tab { width: 116px; flex-basis: 116px; }
-.tab-indicator.report { transform: translateX(116px); }
-.tab-indicator.controls { transform: translateX(232px); }
+.tab-indicator.controls { transform: translateX(124px); }
+.tab-indicator.report { transform: translateX(248px); }
 .tab-indicator { bottom: 10px; }
 
 .report-view { padding: 28px 0 48px; }
@@ -1764,7 +1764,18 @@ body { font-family: var(--font-ui); }
 .report-heading { justify-content: space-between; margin-bottom: 22px; }
 .report-heading h1 { margin: 0; font-size: 28px; }
 .report-heading p, .report-summary p { margin: 4px 0 0; color: var(--muted); }
-.report-actions select { min-height: 44px; max-width: 230px; }
+.report-actions .report-scope {
+  min-height: 44px;
+  max-width: 230px;
+  padding: 0 36px 0 14px;
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23F4F7FB' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 12px 8px;
+}
+.report-actions .report-scope option { color: var(--text); background: var(--surface); }
 .report-summary { display: grid; gap: 12px; margin-bottom: 20px; }
 .report-summary p { font-size: 14px; }
 .report-summary-count { margin: 0; color: var(--muted); }
@@ -1807,11 +1818,11 @@ body { font-family: var(--font-ui); }
 .report-export-menu button:hover { background: #26374b; }
 @media (max-width: 480px) {
   .tabs .tab { width: min(30vw, 116px); flex-basis: min(30vw, 116px); }
-  .tab-indicator.report { transform: translateX(30vw); }
-  .tab-indicator.controls { transform: translateX(60vw); }
+  .tab-indicator.controls { transform: translateX(calc(min(30vw, 116px) + 8px)); }
+  .tab-indicator.report { transform: translateX(calc(min(60vw, 232px) + 16px)); }
   .report-heading { align-items: flex-start; flex-direction: column; }
   .report-actions { width: 100%; flex-wrap: wrap; }
-  .report-actions select { flex: 1 1 100%; max-width: none; }
+  .report-actions .report-scope { flex: 1 1 100%; max-width: none; text-align: left; }
   .report-table-wrap { overflow: visible; }
   .report-table, .report-table tbody, .report-table tr, .report-table td, .report-table th { display: block; width: 100%; }
   .report-table thead { display: none; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { COLORS } from "@/lib/colors";
 import { calculateReport, formatDuration, sortReportRows, type ReportRow } from "@/lib/report";
 import type { DebateSession, DebateTopic } from "@/lib/sessionStore";
@@ -9,7 +9,6 @@ import type { SpeechRecord, ReportSortKey } from "@/types";
 type Props = {
   session: DebateSession;
   topics: DebateTopic[];
-  onImport: (session: DebateSession) => boolean;
   notify: (message: string, tone?: "info" | "error") => void;
 };
 
@@ -41,11 +40,8 @@ function ExportMenu({ rows, records, notSpoken, scopeTitle, session, notify }: {
     ])].map((line) => line.map((cell) => escape(String(cell))).join(";"));
     download(`\uFEFF${lines.join("\r\n")}`, "text/csv;charset=utf-8", `vox-relatorio-${new Date().toISOString().slice(0, 10)}.csv`);
   }
-  function exportJson() {
-    download(JSON.stringify({ version: 3, exportedAt: new Date().toISOString(), session }, null, 2), "application/json;charset=utf-8", `vox-backup-${new Date().toISOString().slice(0, 10)}.json`);
-  }
   return <details className="report-export"><summary className="button button-secondary">Exportar</summary><div className="report-export-menu">
-    <button onClick={copySummary}>Copiar resumo</button><button onClick={exportCsv}>CSV das falas</button><button onClick={exportJson}>Backup completo (JSON)</button>
+    <button onClick={copySummary}>Copiar resumo</button><button onClick={exportCsv}>CSV das falas</button>
   </div></details>;
 }
 
@@ -90,26 +86,8 @@ function NotSpokenList({ delegations }: { delegations: ReportRow[] }) {
   return <section className="not-spoken"><h2>Quem ainda não falou</h2>{delegations.length ? <ul>{delegations.map((row) => <li key={row.id}><i style={{ background: row.color }} />{row.name}</li>)}</ul> : <p>Todas as delegações já falaram.</p>}</section>;
 }
 
-function validBackup(value: unknown): value is { version: 3; session: DebateSession } {
-  if (!value || typeof value !== "object") return false;
-  const backup = value as Record<string, unknown>;
-  if (backup.version !== 3 || typeof backup.exportedAt !== "string" || !Number.isFinite(Date.parse(backup.exportedAt)) || !backup.session || typeof backup.session !== "object") return false;
-  const session = backup.session as Record<string, unknown>;
-  if (!Array.isArray(session.topics) || !Array.isArray(session.speechLog) || !session.controls || typeof session.controls !== "object" || typeof session.activeTopicId !== "string" || typeof session.defaultDuration !== "number" || !Number.isFinite(session.defaultDuration) || session.defaultDuration < 1 || session.defaultDuration > 3600) return false;
-  if (!session.topics.every((topic) => !!topic && typeof topic === "object" && typeof (topic as DebateTopic).id === "string" && typeof (topic as DebateTopic).title === "string" && Array.isArray((topic as DebateTopic).waiting) && (topic as DebateTopic).waiting.every((id) => typeof id === "string" && COLORS.some((color) => color.id === id)) && ((topic as DebateTopic).currentSpeaker === null || COLORS.some((color) => color.id === (topic as DebateTopic).currentSpeaker)) && typeof (topic as DebateTopic).remainingSeconds === "number" && Number.isFinite((topic as DebateTopic).remainingSeconds) && typeof (topic as DebateTopic).currentSpeakerTimerStarted === "boolean" && ((topic as DebateTopic).currentSpeakerStartedAt === null || (typeof (topic as DebateTopic).currentSpeakerStartedAt === "number" && Number.isFinite((topic as DebateTopic).currentSpeakerStartedAt))) && ((topic as DebateTopic).currentSpeakerAllottedSec === null || (typeof (topic as DebateTopic).currentSpeakerAllottedSec === "number" && Number.isFinite((topic as DebateTopic).currentSpeakerAllottedSec))) && ((topic as DebateTopic).currentSpeakerTimerInitialSec === null || (typeof (topic as DebateTopic).currentSpeakerTimerInitialSec === "number" && Number.isFinite((topic as DebateTopic).currentSpeakerTimerInitialSec))))) return false;
-  const topicIds = new Set(session.topics.map((topic) => (topic as DebateTopic).id));
-  if (topicIds.size !== session.topics.length) return false;
-  if (!COLORS.every((color) => {
-    const control = (session.controls as Record<string, unknown>)[color.id];
-    return !!control && typeof control === "object" && typeof (control as { nome?: unknown }).nome === "string" && ((control as { code?: unknown }).code === null || (typeof (control as { code?: unknown }).code === "number" && Number.isFinite((control as { code: number }).code)));
-  })) return false;
-  if (!session.speechLog.every((record) => !!record && typeof record === "object" && typeof (record as SpeechRecord).id === "string" && typeof (record as SpeechRecord).topicId === "string" && topicIds.has((record as SpeechRecord).topicId) && Number.isInteger((record as SpeechRecord).delegationId) && (record as SpeechRecord).delegationId >= 1 && (record as SpeechRecord).delegationId <= COLORS.length && typeof (record as SpeechRecord).startedAt === "number" && Number.isFinite((record as SpeechRecord).startedAt) && ((record as SpeechRecord).durationSec === null || (typeof (record as SpeechRecord).durationSec === "number" && Number.isFinite((record as SpeechRecord).durationSec))) && typeof (record as SpeechRecord).allottedSec === "number" && Number.isFinite((record as SpeechRecord).allottedSec))) return false;
-  return session.topics.some((topic) => (topic as DebateTopic).id === session.activeTopicId);
-}
-
-export function ReportView({ session, topics, onImport, notify }: Props) {
+export function ReportView({ session, topics, notify }: Props) {
   const [scope, setScope] = useState("all");
-  const importRef = useRef<HTMLInputElement>(null);
   const linkedDelegations = COLORS.flatMap((color, index) => session.controls[color.id]?.code !== null
     ? [{ id: index + 1, name: session.controls[color.id]?.nome.trim() || color.name, color: color.hex }]
     : []);
@@ -122,25 +100,10 @@ export function ReportView({ session, topics, onImport, notify }: Props) {
     ? statistics.rows.filter((row) => row.count > 0 && linkedDelegations.some((item) => item.id === row.id)).length
     : statistics.spoken.length;
   const scopeTitle = scope === "all" ? "Todos os tópicos" : topics.find((topic) => topic.id === scope)?.title ?? "Tópico";
-  async function importFile(file: File | undefined) {
-    if (!file) return;
-    try {
-      const parsed: unknown = JSON.parse(await file.text());
-      if (!validBackup(parsed)) throw new Error("O arquivo não é um backup VOX válido na versão 3.");
-      const imported = parsed.session;
-      const confirmed = window.confirm(`Isso substitui os dados atuais: ${imported.topics.length} tópicos, ${imported.speechLog.length} falas. Deseja continuar?`);
-      if (confirmed) {
-        if (onImport(imported)) notify("Backup importado.");
-        else notify("O armazenamento está cheio. O backup foi aplicado apenas nesta sessão.", "error",);
-      }
-    } catch (error) { notify(error instanceof Error ? error.message : "Não foi possível ler esse arquivo.", "error"); }
-    if (importRef.current) importRef.current.value = "";
-  }
   return <section className="report-view screen-transition" aria-labelledby="report-title">
     <div className="report-heading"><div><h1 id="report-title">Relatório</h1><p>Participação das delegações</p></div>
-      <div className="report-actions"><label className="visually-hidden" htmlFor="report-scope">Tópico do relatório</label><select id="report-scope" value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">Todos os tópicos</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select>
+      <div className="report-actions"><label className="visually-hidden" htmlFor="report-scope">Tópico do relatório</label><select id="report-scope" className="button button-secondary report-scope" value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">Todos os tópicos</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select>
         <ExportMenu rows={statistics.rows} records={statistics.records} notSpoken={statistics.notSpoken} scopeTitle={scopeTitle} session={session} notify={notify} />
-        <input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={(event) => void importFile(event.target.files?.[0])} /><button className="button button-secondary" onClick={() => importRef.current?.click()}>Importar</button>
       </div></div>
     {statistics.speechCount === 0 ? <p className="report-empty">Nenhuma fala registrada. As falas aparecem aqui quando forem finalizadas.</p> : <>
       <ReportSummary rows={statistics.rows} speechCount={statistics.speechCount} totalSec={statistics.totalSec} scopeTitle={scopeTitle} denominator={denominator} spokenCount={spokenCount} />
