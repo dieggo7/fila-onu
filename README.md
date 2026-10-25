@@ -103,6 +103,33 @@ npm run dev
 
 Abra `http://localhost:3000` no **Chrome** ou **Edge**.
 
+## Aplicativo para Windows (.exe)
+
+O VOX também pode ser executado como aplicativo desktop usando Electron. Para desenvolver ou gerar os executáveis, instale as dependências com `npm install` em um computador com Node.js 18 ou superior.
+
+### Desenvolvimento
+
+```bash
+npm run electron:dev
+```
+
+Esse comando inicia o Next.js e abre o Electron apontando para `http://localhost:3000`. Encerre com `Ctrl+C` no terminal.
+
+### Gerar instalador e versão portátil
+
+```bash
+npm run electron:build
+```
+
+O comando exporta o site para uso offline, compila o processo Electron e gera os executáveis Windows x64 na pasta `release/`:
+
+- `VOX Setup 0.1.0.exe`: instalador, com opção de escolher a pasta e criar atalho na área de trabalho.
+- `VOX-Portable-0.1.0.exe`: versão portátil, sem instalação.
+
+Execute o instalador ou o arquivo portátil e conecte o ESP32 por USB. Com uma porta serial disponível, o VOX a seleciona diretamente; com mais de uma, abre uma janela para escolher. Feche outros programas que estejam usando a porta (como o monitor serial da Arduino IDE) antes de conectar.
+
+O Windows pode exibir um aviso do SmartScreen porque os executáveis ainda não têm assinatura digital. Os dados locais do aplicativo, como nomes e vínculos, ficam no perfil do usuário e são mantidos entre execuções.
+
 ## Como usar
 
 1. Ligue o ESP32 no computador pelo cabo USB.

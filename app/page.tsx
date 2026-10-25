@@ -8,6 +8,7 @@ import { useSpeakers } from "@/lib/useSpeakers";
 import { useTimer } from "@/lib/useTimer";
 import { useTopics } from "@/lib/useTopics";
 import { useSerial } from "@/lib/useSerial";
+import { BrandLogo } from "@/components/BrandLogo";
 
 type Screen = "queue" | "controls";
 type Toast = {
@@ -251,7 +252,7 @@ export default function Home() {
       )}
       <header className="topbar">
         <a className="app-name" href="#fila">
-          Fila de Controles
+          <BrandLogo />
         </a>
         <div className="connection-area">
           {serial.connected ? (

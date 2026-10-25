@@ -16,9 +16,14 @@
 # next.js
 /.next/
 /out/
+/dist-electron/
+/release/
+/electron-app/
+/.electron-app/
 
 # production
-/build
+/build/*
+!/build/vox.ico
 
 # misc
 .DS_Store

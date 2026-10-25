@@ -5,9 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:web:electron": "cross-env ELECTRON=1 next build",
+    "electron:compile": "tsc -p tsconfig.electron.json",
+    "electron:dev": "npm run electron:compile && concurrently -k \"npm:dev\" \"wait-on http://localhost:3000 && cross-env ELECTRON_DEV=1 electron .\"",
+    "electron:build": "npm run build:web:electron && npm run electron:compile && node scripts/stage-electron-app.mjs && electron-builder --projectDir .electron-app --win --x64",
     "start": "next start",
     "lint": "eslint"
   },
+  "main": "dist-electron/main.js",
   "dependencies": {
     "next": "16.4.2",
     "react": "19.3.0",
@@ -18,9 +23,14 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wait-on": "^9.5.1"
   }
 }

@@ -1,0 +1,29 @@
+{
+  "name": "vox-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "author": "VOX",
+  "description": "VOX desktop application",
+  "main": "dist-electron/main.js",
+  "build": {
+    "appId": "br.vox.app",
+    "electronVersion": "45.0.0",
+    "npmRebuild": false,
+    "productName": "VOX",
+    "directories": {
+      "output": "../release"
+    },
+    "files": ["out/**/*", "dist-electron/**/*", "runtime/vox.ico"],
+    "win": {
+      "icon": "../build/vox.ico",
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": { "artifactName": "VOX-Portable-${version}.${ext}" }
+  }
+}
