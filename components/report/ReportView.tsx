@@ -32,16 +32,28 @@ function ExportMenu({ rows, records, notSpoken, scopeTitle, session, notify }: {
     void navigator.clipboard.writeText(lines.join("\n")).then(() => notify("Resumo copiado."), () => notify("Não foi possível copiar o resumo.", "error"));
   }
   function exportCsv() {
-    const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    const lines = [["Tópico", "Delegação", "Início", "Duração (s)", "Tempo padrão (s)"], ...records.map((record) => [
+    const xmlEscape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+    const columns = ["Tópico", "Delegação", "Início", "Duração (s)", "Tempo padrão (s)"];
+    const rows = records.map((record) => [
       session.topics.find((topic) => topic.id === record.topicId)?.title ?? "",
       session.controls[COLORS[record.delegationId - 1]?.id ?? ""]?.nome ?? COLORS[record.delegationId - 1]?.name ?? "",
-      new Date(record.startedAt).toLocaleString("pt-BR"), record.durationSec === null ? "" : String(record.durationSec), String(record.allottedSec),
-    ])].map((line) => line.map((cell) => escape(String(cell))).join(";"));
-    download(`\uFEFF${lines.join("\r\n")}`, "text/csv;charset=utf-8", `vox-relatorio-${new Date().toISOString().slice(0, 10)}.csv`);
+      new Date(record.startedAt), record.durationSec, record.allottedSec,
+    ] as const);
+    const cell = (value: string | number | Date | null, index: number) => {
+      if (value === null) return `<Cell ss:StyleID="body"><Data ss:Type="String"></Data></Cell>`;
+      if (value instanceof Date) return `<Cell ss:StyleID="date"><Data ss:Type="DateTime">${value.toISOString()}</Data></Cell>`;
+      if (typeof value === "number") return `<Cell ss:StyleID="number"><Data ss:Type="Number">${value}</Data></Cell>`;
+      return `<Cell ss:StyleID="${index < 2 ? "body" : "number"}"><Data ss:Type="String">${xmlEscape(value)}</Data></Cell>`;
+    };
+    const header = `<Row ss:AutoFitHeight="1">${columns.map((value) => `<Cell ss:StyleID="header"><Data ss:Type="String">${xmlEscape(value)}</Data></Cell>`).join("")}</Row>`;
+    const data = rows.map((row) => `<Row ss:AutoFitHeight="1">${row.map((value, index) => cell(value, index)).join("")}</Row>`).join("");
+    const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>\n<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel"><Styles><Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Aptos" ss:Size="11" ss:Color="#243247"/></Style><Style ss:ID="header"><Interior ss:Color="#243247" ss:Pattern="Solid"/><Font ss:FontName="Aptos" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/><Alignment ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#243247"/></Borders></Style><Style ss:ID="body"><Alignment ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DCE3EA"/></Borders></Style><Style ss:ID="number"><NumberFormat ss:Format="0"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DCE3EA"/></Borders></Style><Style ss:ID="date"><NumberFormat ss:Format="dd/mm/yyyy hh:mm"/><Alignment ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DCE3EA"/></Borders></Style></Styles><Worksheet ss:Name="Falas"><Table><Column ss:Width="220"/><Column ss:Width="180"/><Column ss:Width="145"/><Column ss:Width="105"/><Column ss:Width="145"/>${header}${data}</Table><x:WorksheetOptions><x:FreezePanes/><x:FrozenNoSplit/><x:SplitHorizontal>1</x:SplitHorizontal><x:TopRowBottomPane>1</x:TopRowBottomPane><x:ActivePane>2</x:ActivePane><x:ProtectObjects>False</x:ProtectObjects><x:ProtectScenarios>False</x:ProtectScenarios></x:WorksheetOptions><x:AutoFilter x:Range="R1C1:R${records.length + 1}C5"/></Worksheet></Workbook>`;
+    const today = new Date();
+    const date = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+    download(`\uFEFF${xml}`, "application/vnd.ms-excel;charset=utf-8", `vox-relatorio-${date}.xml`);
   }
   return <details className="report-export"><summary className="button button-secondary">Exportar</summary><div className="report-export-menu">
-    <button onClick={copySummary}>Copiar resumo</button><button onClick={exportCsv}>CSV das falas</button>
+    <button onClick={copySummary}>Copiar resumo</button><button onClick={exportCsv}>Planilha Excel das falas</button>
   </div></details>;
 }
 
